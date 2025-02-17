@@ -14,6 +14,19 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Create required files
+      run: |
+        # 创建空日志文件
+        if (-not (Test-Path rtmp_auto.log)) {
+          New-Item rtmp_auto.log -ItemType File
+        }
+        
+        # 验证主文件存在
+        if (-not (Test-Path dy_PushFlow.py)) { 
+          Write-Error "主脚本文件dy_PushFlow.py未找到!"
+          exit 1 
+        }
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -29,18 +42,17 @@ jobs:
       run: |
         $wiresharkPath = "C:\Program Files\Wireshark"
         Add-Content $env:GITHUB_PATH "$wiresharkPath"
-        Write-Output "Added Wireshark to PATH: $wiresharkPath"
 
     - name: Build executable
       run: |
         pyinstaller --onefile `
           --add-data="rtmp_auto.log;." `
-          --name RTMPAutoTool `
+          --name DouyinPushTool `  # 修改可执行文件名称
           --noconsole `
-          dy_PushFlow.py
+          dy_PushFlow.py  # 使用实际的主文件名称
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: RTMPAutoTool
-        path: dist/RTMPAutoTool.exe
+        name: DouyinPushTool
+        path: dist/DouyinPushTool.exe
