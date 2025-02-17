@@ -3,7 +3,7 @@
 block_cipher = None
 
 a = Analysis(
-    ['src/dypushflow.py'],
+    ['src/dy_PushFlow.py'],
     pathex=[],
     binaries=[],
     datas=[('src/favicon.ico', '.')],
