@@ -23,23 +23,24 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller pyshark psutil ctypes-win32
+        pip install pyinstaller pyshark psutil
 
-    - name: Add Tesseract to PATH (Workaround)
+    - name: Add Wireshark to PATH
       run: |
-        Add-Content $env:GITHUB_PATH "C:\Program Files\Wireshark"
+        $wiresharkPath = "C:\Program Files\Wireshark"
+        Add-Content $env:GITHUB_PATH "$wiresharkPath"
+        Write-Output "Added Wireshark to PATH: $wiresharkPath"
 
     - name: Build executable
       run: |
         pyinstaller --onefile `
           --add-data="rtmp_auto.log;." `
-          --icon=icon.ico `
           --name RTMPAutoTool `
           --noconsole `
           main.py
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: RTMPAutoTool
         path: dist/RTMPAutoTool.exe
