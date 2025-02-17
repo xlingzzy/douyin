@@ -5,7 +5,7 @@ from PyInstaller.utils.hooks import collect_data_files
 block_cipher = None
 
 a = Analysis(
-    ['dy_PushFlow.py'],
+    ['dy_dy_PushFlow.py'],
     binaries=[],
     datas=collect_data_files('pyshark'),
     hiddenimports=[
