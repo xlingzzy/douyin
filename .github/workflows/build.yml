@@ -7,26 +7,34 @@ on:
       - master
 
 permissions:
-  contents: write  # 关键权限设置
+  contents: write  # 必须的发布权限
 
 jobs:
-  build-and-release:
+  build:
     runs-on: windows-latest
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # 获取完整提交历史
+        fetch-depth: 0
 
     - name: Create required files
       run: |
-        # 自动创建必要的空文件
+        # 创建日志文件
         if (-not (Test-Path rtmp_auto.log)) {
           New-Item rtmp_auto.log -ItemType File
         }
 
-    - name: Set up Python
+    - name: Verify environment
+      run: |
+        # 确认关键文件存在
+        if (-not (Test-Path dy_PushFlow.py)) { 
+          Write-Error "主脚本缺失!"
+          exit 1 
+        }
+
+    - name: Setup Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
@@ -37,30 +45,36 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller pyshark psutil
 
-    - name: Add Wireshark to PATH
+    - name: Configure Wireshark
       run: |
-        $wiresharkPath = "C:\Program Files\Wireshark"
-        Add-Content $env:GITHUB_PATH "$wiresharkPath"
-        Write-Host "Added Wireshark to PATH: $wiresharkPath"
+        # 验证Wireshark安装
+        $tsharkPath = "${env:ProgramFiles}\Wireshark\tshark.exe"
+        if (-not (Test-Path $tsharkPath)) {
+            Write-Error "❌ Wireshark未安装: $tsharkPath"
+            exit 1
+        }
+        # 添加到PATH
+        Add-Content $env:GITHUB_PATH "${env:ProgramFiles}\Wireshark"
 
     - name: Build executable
       run: |
         pyinstaller --onefile `
-          --add-data="rtmp_auto.log;." `
+          --add-binary "${env:ProgramFiles}\Wireshark\tshark.exe;." `
+          --add-data "rtmp_auto.log;." `
           --name DouyinPushTool `
           --noconsole `
           dy_PushFlow.py
 
-    - name: Create Release and Upload
+    - name: Publish Release
       uses: softprops/action-gh-release@v2
       if: success()
       with:
         files: |
           dist/DouyinPushTool.exe
         tag_name: build-${{ github.run_number }}
-        name: "Release v${{ github.run_number }}"
+        name: "Release ${{ github.run_number }}"
         body: |
-          自动构建版本信息：
+          自动构建信息：
           - 提交ID: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
           - 构建时间: ${{ steps.date.outputs.current_date }}
         draft: false
