@@ -1,27 +1,27 @@
-# -*- mode: python ; coding: utf-8 -*-
+# -*- mode: python -*-
+import sys
+from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 
 a = Analysis(
-    ['src/dy_PushFlow.py'],
-    pathex=[],
+    ['rtmp_hunter.py'],
     binaries=[],
-    datas=[('src/favicon.ico', '.')],
+    datas=collect_data_files('pyshark'),
     hiddenimports=[
-        'pyshark.capture',
-        'pyshark.tshark.tshark',
-        'win32timezone',
-        'psutil'
+        'pyshark.tshark.tshark_xml',
+        'cytoolz',
+        'lxml', 
+        'psutil._psutil_windows'
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
     cipher=block_cipher,
-    noarchive=False,
 )
+a.datas += [('VERSION', '.', 'DATA')]
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
@@ -29,18 +29,20 @@ exe = EXE(
     a.scripts,
     a.binaries,
     a.zipfiles,
-    a.datas,
-    name='RTMPHunter',
+    a.datas,  
+    [],
+    name='RTMPAuto',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
     console=True,
-    disable_windowed_traceback=False,
+    disable_windowed_tracer=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='src/favicon.ico',
-    uac_admin=True
+    icon='favicon.ico'  # 可选图标文件
 )
