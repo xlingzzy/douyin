@@ -1,10 +1,14 @@
-name: Build Windows Executable
+name: Auto Build on Push
 
 on:
   push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
+    branches:
+      - main  # 监控main分支的推送
+      - master  # 如果使用master分支
+  pull_request:  # 可选：PR时也构建
+    branches:
+      - main
+      - master
 
 jobs:
   build:
@@ -16,15 +20,8 @@ jobs:
 
     - name: Create required files
       run: |
-        # 创建空日志文件
         if (-not (Test-Path rtmp_auto.log)) {
           New-Item rtmp_auto.log -ItemType File
-        }
-        
-        # 验证主文件存在
-        if (-not (Test-Path dy_PushFlow.py)) { 
-          Write-Error "主脚本文件dy_PushFlow.py未找到!"
-          exit 1 
         }
 
     - name: Set up Python
@@ -40,16 +37,15 @@ jobs:
 
     - name: Add Wireshark to PATH
       run: |
-        $wiresharkPath = "C:\Program Files\Wireshark"
-        Add-Content $env:GITHUB_PATH "$wiresharkPath"
+        Add-Content $env:GITHUB_PATH "C:\Program Files\Wireshark"
 
     - name: Build executable
       run: |
         pyinstaller --onefile `
           --add-data="rtmp_auto.log;." `
-          --name DouyinPushTool `  # 修改可执行文件名称
+          --name DouyinPushTool `
           --noconsole `
-          dy_PushFlow.py  # 使用实际的主文件名称
+          dy_PushFlow.py
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
