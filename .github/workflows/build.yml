@@ -1,38 +1,48 @@
-name: Build EXE
+# -*- mode: python -*-
+import sys
+from PyInstaller.utils.hooks import collect_data_files
 
-on: [push, workflow_dispatch]
+block_cipher = None
 
-jobs:
-  build:
-    runs-on: windows-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+a = Analysis(
+    ['dy_PushFlow.py'],
+    binaries=[],
+    datas=collect_data_files('pyshark'),
+    hiddenimports=[
+        'pyshark.tshark.tshark_xml',
+        'cytoolz',
+        'lxml', 
+        'psutil._psutil_windows'
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    cipher=block_cipher,
+)
+a.datas += [('VERSION', '.', 'DATA')]
 
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        # 安装UPX压缩工具
-        Invoke-WebRequest -Uri "https://github.com/upx/upx/releases/download/v4.0.2/upx-4.0.2-win64.zip" -OutFile upx.zip
-        Expand-Archive upx.zip -DestinationPath upx
-        echo "${{ github.workspace }}\upx\upx-4.0.2-win64" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-    - name: Build EXE
-      run: |
-        pyinstaller build.spec
-        Compress-Archive -Path dist/* -DestinationPath RTMPHunter.zip
-
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: RTMPHunter
-        path: |
-          dist/RTMPHunter.exe
-          RTMPHunter.zip
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,  
+    [],
+    name='RTMPAuto',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=True,
+    disable_windowed_tracer=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon='favicon.ico'  # 可选图标文件
+)
