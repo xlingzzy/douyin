@@ -1,0 +1,4 @@
+pyshark>=0.4.5
+psutil>=5.9.0
+pyinstaller>=5.13.0
+ctypes-win32>=1.2.0
