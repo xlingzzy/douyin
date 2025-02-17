@@ -6,6 +6,9 @@ on:
       - main
       - master
 
+permissions:
+  contents: write  # 关键权限设置
+
 jobs:
   build-and-release:
     runs-on: windows-latest
@@ -13,6 +16,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # 获取完整提交历史
 
     - name: Create required files
       run: |
@@ -34,7 +39,9 @@ jobs:
 
     - name: Add Wireshark to PATH
       run: |
-        Add-Content $env:GITHUB_PATH "C:\Program Files\Wireshark"
+        $wiresharkPath = "C:\Program Files\Wireshark"
+        Add-Content $env:GITHUB_PATH "$wiresharkPath"
+        Write-Host "Added Wireshark to PATH: $wiresharkPath"
 
     - name: Build executable
       run: |
@@ -44,18 +51,18 @@ jobs:
           --noconsole `
           dy_PushFlow.py
 
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v1
+    - name: Create Release and Upload
+      uses: softprops/action-gh-release@v2
       if: success()
       with:
         files: |
           dist/DouyinPushTool.exe
-        tag_name: auto-build-${{ github.run_id }}   # 自动生成唯一标签
-        name: "自动构建版本 (${{ github.sha }})"
+        tag_name: build-${{ github.run_number }}
+        name: "Release v${{ github.run_number }}"
         body: |
-          自动生成的构建版本
-          提交ID: ${{ github.sha }}
-          构建时间: ${{ github.event.head_commit.timestamp }}
+          自动构建版本信息：
+          - 提交ID: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+          - 构建时间: ${{ steps.date.outputs.current_date }}
         draft: false
         prerelease: false
         generate_release_notes: true
