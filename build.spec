@@ -6,7 +6,7 @@ a = Analysis(
     ['src/dypushflow.py'],
     pathex=[],
     binaries=[],
-    datas=[('src/obs.ico', '.')],
+    datas=[('src/favicon.ico', '.')],
     hiddenimports=[
         'pyshark.capture',
         'pyshark.tshark.tshark',
@@ -41,6 +41,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='src/obs.ico',
+    icon='src/favicon.ico',
     uac_admin=True
 )
