@@ -1,17 +1,13 @@
-name: Auto Build on Push
+name: Auto Build and Release
 
 on:
   push:
-    branches:
-      - main  # 监控main分支的推送
-      - master  # 如果使用master分支
-  pull_request:  # 可选：PR时也构建
     branches:
       - main
       - master
 
 jobs:
-  build:
+  build-and-release:
     runs-on: windows-latest
 
     steps:
@@ -20,6 +16,7 @@ jobs:
 
     - name: Create required files
       run: |
+        # 自动创建必要的空文件
         if (-not (Test-Path rtmp_auto.log)) {
           New-Item rtmp_auto.log -ItemType File
         }
@@ -47,8 +44,20 @@ jobs:
           --noconsole `
           dy_PushFlow.py
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      if: success()
       with:
-        name: DouyinPushTool
-        path: dist/DouyinPushTool.exe
+        files: |
+          dist/DouyinPushTool.exe
+        tag_name: auto-build-${{ github.run_id }}   # 自动生成唯一标签
+        name: "自动构建版本 (${{ github.sha }})"
+        body: |
+          自动生成的构建版本
+          提交ID: ${{ github.sha }}
+          构建时间: ${{ github.event.head_commit.timestamp }}
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
