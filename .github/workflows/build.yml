@@ -37,7 +37,7 @@ jobs:
           --add-data="rtmp_auto.log;." `
           --name RTMPAutoTool `
           --noconsole `
-          main.py
+          dy_PushFlow.py
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
