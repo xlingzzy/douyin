@@ -31,9 +31,59 @@ const CONFIG = {
 const API = () => `https://www.nodeseek.com/api/attendance?random=${CONFIG.random}`;
 
 const store = {
-  read(key) { return $persistentStore.read(key) || ''; },
-  write(value, key) { return $persistentStore.write(value, key); },
+  read(key) {
+    try {
+      return (typeof $persistentStore !== 'undefined' && $persistentStore.read(key)) || '';
+    } catch (e) {
+      console.log('persistentStore.read error: ' + e);
+      return '';
+    }
+  },
+  write(value, key) {
+    try {
+      if (typeof $persistentStore === 'undefined') throw new Error('$persistentStore 不可用');
+      $persistentStore.write(value, key);
+      return true;
+    } catch (e) {
+      console.log('persistentStore.write error: ' + e);
+      return false;
+    }
+  },
 };
+
+function notify(title, subtitle, body) {
+  try {
+    if (typeof $notification !== 'undefined' && $notification.post) {
+      $notification.post(title || '', subtitle || '', body || '');
+    }
+  } catch (e) {
+    console.log('notification error: ' + e);
+  }
+}
+
+function safeDone() {
+  try {
+    if (typeof $done !== 'undefined') $done({});
+  } catch (e) {
+    console.log('$done error: ' + e);
+  }
+}
+
+function readArgument() {
+  try {
+    return typeof $argument !== 'undefined' ? $argument : '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function currentRequest() {
+  try {
+    return typeof $request !== 'undefined' && $request ? $request : null;
+  } catch (e) {
+    return null;
+  }
+}
 
 function getHeader(headers, name) {
   if (!headers) return '';
@@ -46,6 +96,10 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 function parseArgs(raw) {
   const out = {};
   if (!raw) return out;
+  if (typeof raw === 'object') {
+    Object.keys(raw).forEach((k) => { out[k] = String(raw[k]); });
+    return out;
+  }
   String(raw).split('&').forEach((pair) => {
     const i = pair.indexOf('=');
     if (i > 0) out[pair.slice(0, i).trim()] = pair.slice(i + 1).trim();
@@ -67,10 +121,11 @@ function loadAccounts() {
 
 function saveAccount(cookie, ua) {
   const list = loadAccounts();
-  if (list.some((a) => a.cookie === cookie)) return false;
+  if (list.some((a) => a.cookie === cookie)) return 'exists';
   list.push({ cookie, ua: ua || '' });
-  store.write(list.map((a) => a.cookie + '|||' + a.ua).join('\n'), CONFIG.cookieKey);
-  return true;
+  return store.write(list.map((a) => a.cookie + '|||' + a.ua).join('\n'), CONFIG.cookieKey)
+    ? 'saved'
+    : 'error';
 }
 
 /* ---------------- HTTP ---------------- */
@@ -121,39 +176,51 @@ function judge(raw) {
 
 /* ---------------- 模式一：抓 Cookie ---------------- */
 function capture() {
-  const req = $request || {};
+  const req = currentRequest();
+  if (!req) {
+    const msg = '没有 $request：抓 Cookie 必须由 http-request 规则触发，手动运行脚本是抓不到的。\n请登录 NodeSeek 后刷新页面（并确认规则类型是 http-request）。';
+    console.log('NodeSeek capture: $request 不存在');
+    notify('NodeSeek 抓 Cookie 失败', '', msg);
+    safeDone();
+    return;
+  }
+
   const headers = req.headers || {};
   const cookie = getHeader(headers, 'Cookie');
   const ua = getHeader(headers, 'User-Agent');
+  console.log('NodeSeek capture: url=' + req.url + ', cookie=' + (cookie ? 'yes' : 'no'));
 
   if (!cookie) {
     console.log('NodeSeek capture: 请求无 Cookie -> ' + req.url);
-    $done({});
+    safeDone();
     return;
   }
 
   if (CONFIG.loginCookieName && !new RegExp(CONFIG.loginCookieName + '=').test(cookie)) {
     console.log('NodeSeek capture: 未检测到登录 Cookie，忽略');
-    $done({});
+    safeDone();
     return;
   }
 
-  const added = saveAccount(cookie, ua);
-  const total = loadAccounts().length;
-  console.log(`NodeSeek capture: ${added ? 'saved' : 'exists'}, total=${total}`);
+  const before = loadAccounts().length;
+  const status = saveAccount(cookie, ua);
+  const total = status === 'saved' ? before + 1 : before;
+  console.log(`NodeSeek capture: ${status}, total=${total}`);
 
-  if (added) {
-    $notification.post('NodeSeek Cookie 已保存', '', `当前账号数：${total}`);
+  if (status === 'saved') {
+    notify('NodeSeek Cookie 已保存', '', `当前账号数：${total}`);
+  } else if (status === 'error') {
+    notify('NodeSeek Cookie 保存失败', '', '$persistentStore 写入失败，请检查 Loon 版本或存储权限');
   }
-  $done({});
+  safeDone();
 }
 
 /* ---------------- 模式二：签到 ---------------- */
 async function checkin() {
   const accounts = loadAccounts();
   if (!accounts.length) {
-    $notification.post('NodeSeek 签到', '', '未抓到 Cookie，请先在 Loon 里打开 NodeSeek 并刷新页面');
-    $done({});
+    notify('NodeSeek 签到', '', '未抓到 Cookie，请先在 Loon 里打开 NodeSeek 并刷新页面');
+    safeDone();
     return;
   }
 
@@ -207,24 +274,25 @@ async function checkin() {
   const body = lines.join('\n');
   console.log(body);
   if (CONFIG.notifyAlways || failed > 0) {
-    $notification.post(
+    notify(
       failed ? `NodeSeek 签到完成（失败 ${failed}）` : `NodeSeek 签到完成（成功 ${success}）`,
       '',
       body
     );
   }
-  $done({});
+  safeDone();
 }
 
 /* ---------------- 入口 ---------------- */
 (async () => {
-  const args = parseArgs($argument);
+  const args = parseArgs(readArgument());
   const action = args.action || 'checkin';
   if (action === 'capture') return capture();
   return checkin();
 })().catch((e) => {
-  const msg = (e && e.stack) || String(e);
-  console.log('NodeSeek script error: ' + msg);
-  $notification.post('NodeSeek 签到异常', '', (e && e.message) || String(e));
-  $done({});
+  const message = (e && e.message) ? e.message : String(e);
+  const stack = (e && e.stack) || '';
+  console.log('NodeSeek script error: ' + message + (stack ? '\n' + stack : ''));
+  notify('NodeSeek 脚本异常', '', message);
+  safeDone();
 });
