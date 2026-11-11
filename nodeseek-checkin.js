@@ -32,6 +32,11 @@ const CONFIG = {
   timeout: 15000,
   interval: 800,                // 多账号间隔(ms)
   debug: false,                 // true=把响应体写进 Loon 日志
+
+  // 可选：如果 MITM/抓包不方便，可以直接把浏览器 Cookie 粘到这里，跳过抓取。
+  // 多账号用换行分隔。填了它就不需要 request 抓 Cookie 规则。
+  manualCookie: '',
+  manualUserAgent: '',          // 可选：与手动 Cookie 匹配的 UA
 };
 
 const API = () => `https://www.nodeseek.com/api/attendance?random=${CONFIG.random}`;
@@ -130,15 +135,26 @@ function parseArgs(raw) {
 }
 
 /* ---------------- 多账号存取 ---------------- */
-function loadAccounts() {
-  const raw = store.read(CONFIG.cookieKey);
+function parseAccounts(raw) {
   if (!raw) return [];
-  return raw.split('\n').filter(Boolean).map((line) => {
+  return String(raw).split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
     const i = line.indexOf('|||');
     return i === -1
       ? { cookie: line, ua: '' }
       : { cookie: line.slice(0, i), ua: line.slice(i + 3) };
   }).filter((a) => a.cookie);
+}
+
+function loadAccounts() {
+  const list = parseAccounts(store.read(CONFIG.cookieKey));
+
+  // 脚本里手动填写的 Cookie 优先合并进来（多账号换行分隔）
+  parseAccounts(CONFIG.manualCookie).forEach((acc) => {
+    if (list.some((a) => a.cookie === acc.cookie)) return;
+    list.push({ cookie: acc.cookie, ua: acc.ua || CONFIG.manualUserAgent || '' });
+  });
+
+  return list;
 }
 
 function saveAccount(cookie, ua) {
