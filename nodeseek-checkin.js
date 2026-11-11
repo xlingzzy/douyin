@@ -3,16 +3,22 @@
  * 接口：POST https://www.nodeseek.com/api/attendance?random=true
  * 依赖：登录后的 Cookie（含 session） + 对应 UA
  *
- * Loon 配置：
+ * Loon 3.5.1 (983) 起的新版 Script 语法（推荐）：
  *
  * [Script]
- * # 1) 抓 Cookie：登录 nodeseek.com 后刷新任意页面
- * http-request ^https?:\/\/www\.nodeseek\.com\/ script-path=https://raw.githubusercontent.com/you/repo/main/nodeseek-checkin.js, requires-body=false, timeout=10, tag=NodeSeek抓Cookie, argument=action=capture
+ * # 1) 抓 Cookie：登录 nodeseek.com 后刷新任意页面（只能在请求里触发，不能手动运行）
+ * request if ${url} ~= /^https?:\/\/www\.nodeseek\.com\// then script("https://raw.githubusercontent.com/you/repo/main/nodeseek-checkin.js", "action=capture") with tag="NodeSeek抓Cookie", timeout=20, requires_body=false
  * # 2) 每天 00:10 签到
+ * cron "10 0 * * *" then script("https://raw.githubusercontent.com/you/repo/main/nodeseek-checkin.js", "action=checkin") with tag="NodeSeek签到", timeout=300
+ * # 3) 可选：给一个可手动运行的入口
+ * generic then script("https://raw.githubusercontent.com/you/repo/main/nodeseek-checkin.js", "action=checkin") with tag="NodeSeek手动签到", timeout=300
+ *
+ * 旧版语法（Loon 仍兼容）：
+ * http-request ^https?:\/\/www\.nodeseek\.com\/ script-path=https://raw.githubusercontent.com/you/repo/main/nodeseek-checkin.js, requires-body=false, timeout=10, tag=NodeSeek抓Cookie, argument=action=capture
  * cron "10 0 * * *" script-path=https://raw.githubusercontent.com/you/repo/main/nodeseek-checkin.js, timeout=60, tag=NodeSeek签到, argument=action=checkin
  *
  * [MITM]
- * hostname = %APPEND% www.nodeseek.com
+ * hostname = %APPEND% www.nodeseek.com, nodeseek.com
  *
  * 多账号：退出登录换号，再刷新页面抓一次即可，脚本按 Cookie 去重保存。
  */
@@ -61,9 +67,12 @@ function notify(title, subtitle, body) {
   }
 }
 
-function safeDone() {
+function safeDone(result) {
   try {
-    if (typeof $done !== 'undefined') $done({});
+    if (typeof $done === 'undefined') return;
+    // Request Script 必须传 {} 才放行；Cron/Generic 用无参 $done() 结束
+    if (result === undefined || result === null) $done();
+    else $done(result);
   } catch (e) {
     console.log('$done error: ' + e);
   }
@@ -89,6 +98,19 @@ function getHeader(headers, name) {
   if (!headers) return '';
   const key = Object.keys(headers).find((k) => k.toLowerCase() === name.toLowerCase());
   return key ? headers[key] : '';
+}
+
+function toText(data) {
+  if (data === undefined || data === null) return '';
+  if (typeof data === 'string') return data;
+  try {
+    if (typeof TextDecoder !== 'undefined') return new TextDecoder('utf-8').decode(data);
+  } catch (e) {}
+  try {
+    return String.fromCharCode.apply(null, data);
+  } catch (e) {
+    return String(data);
+  }
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
@@ -136,12 +158,16 @@ function httpOnce(opts) {
     function finish(v) {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      try {
+        // 官方文档说明 clearTimeout 在部分运行时不可靠，存在才调用
+        if (typeof clearTimeout === 'function') clearTimeout(timer);
+      } catch (e) {}
       resolve(v);
     }
     try {
-      const fn = String(opts.method || 'GET').toUpperCase() === 'POST' ? $httpClient.post : $httpClient.get;
-      fn(opts, (err, resp, data) => finish({ err, resp, data }));
+      const params = Object.assign({ timeout: CONFIG.timeout }, opts);
+      const fn = String(params.method || 'GET').toUpperCase() === 'POST' ? $httpClient.post : $httpClient.get;
+      fn(params, (err, resp, data) => finish({ err, resp, data }));
     } catch (e) {
       finish({ err: e });
     }
@@ -178,7 +204,7 @@ function judge(raw) {
 function capture() {
   const req = currentRequest();
   if (!req) {
-    const msg = '没有 $request：抓 Cookie 必须由 http-request 规则触发，手动运行脚本是抓不到的。\n请登录 NodeSeek 后刷新页面（并确认规则类型是 http-request）。';
+    const msg = '没有 $request：抓 Cookie 必须由 request/http-request 类型的规则触发，手动运行脚本是抓不到的。\n请登录 NodeSeek 后刷新页面（并确认规则类型是 Request Script）。';
     console.log('NodeSeek capture: $request 不存在');
     notify('NodeSeek 抓 Cookie 失败', '', msg);
     safeDone();
@@ -192,13 +218,13 @@ function capture() {
 
   if (!cookie) {
     console.log('NodeSeek capture: 请求无 Cookie -> ' + req.url);
-    safeDone();
+    safeDone({});
     return;
   }
 
   if (CONFIG.loginCookieName && !new RegExp(CONFIG.loginCookieName + '=').test(cookie)) {
     console.log('NodeSeek capture: 未检测到登录 Cookie，忽略');
-    safeDone();
+    safeDone({});
     return;
   }
 
@@ -212,7 +238,7 @@ function capture() {
   } else if (status === 'error') {
     notify('NodeSeek Cookie 保存失败', '', '$persistentStore 写入失败，请检查 Loon 版本或存储权限');
   }
-  safeDone();
+  safeDone({});
 }
 
 /* ---------------- 模式二：签到 ---------------- */
@@ -258,13 +284,13 @@ async function checkin() {
     if (status >= 400) {
       const hint = status === 403 ? '（可能被 Cloudflare 拦截，换网络或重新抓 Cookie）' : '';
       lines.push(`${label}: [FAIL] HTTP ${status}${hint}`);
-      if (CONFIG.debug) console.log(`[${label}] ${data}`);
+      if (CONFIG.debug) console.log(`[${label}] ${toText(data)}`);
       failed++;
       continue;
     }
 
-    const result = judge(data);
-    if (CONFIG.debug) console.log(`[${label}] ${data}`);
+    const result = judge(toText(data));
+    if (CONFIG.debug) console.log(`[${label}] ${toText(data)}`);
     result.ok ? success++ : failed++;
     lines.push(`${label}: ${result.ok ? '[OK]' : '[FAIL]'} ${result.msg}`);
 
@@ -294,5 +320,6 @@ async function checkin() {
   const stack = (e && e.stack) || '';
   console.log('NodeSeek script error: ' + message + (stack ? '\n' + stack : ''));
   notify('NodeSeek 脚本异常', '', message);
-  safeDone();
+  // 请求脚本必须传 {} 放行；Cron/Generic 用无参结束
+  safeDone(currentRequest() ? {} : undefined);
 });
